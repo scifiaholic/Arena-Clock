@@ -9,6 +9,27 @@
 #include "SoftwareSerial.h"
 #include "DFRobotDFPlayerMini.h"
 
+//ENUMS
+#define ENABLED 1
+#define ON 1
+#define DISABLED 0
+#define OFF 0
+
+#define START_SWITCH_ON 0
+#define START_SWTICH_OFF 1
+
+#define DIAL_BUTTON_PRESSED 1
+#define DIAL_BUTTON_RELEASED 0
+
+#define CLOCK_RUNNING 0
+#define CLOCK_STOPPED 1
+
+#define JUDGES_READY 1
+#define JUDGES_BUSY 0
+
+#define START_FILE 2
+#define BUZZER_FILE 1
+
 #define ENCODERPULSE A0
 #define ENCODERDIRECTION D0
 //D1 I2C SCL
@@ -22,20 +43,25 @@
 
 int delayval = 50;
 
-unsigned long clockinterval = 5000; //milliseconds equal to 3 minutes
+#define clockinterval 180000 //3 minutes in milliseconds
 unsigned long currentTime = millis(); //current time on the internal clock
 unsigned long previousTime = millis();
-unsigned long StopTime = millis(); //Time Clock was started
-unsigned long ClockTime = clockinterval; //Time displayed on the clock
-int ClockState = 0;
-int JudgeState = 0;
+unsigned long StopTime = millis(); //time clock will stop
+unsigned long ClockTime = clockinterval; //time displayed on the clock
 
+int ClockState = DISABLED;
+int ResetButtonState = DISABLED;
+
+unsigned long previousseconds = 0;
+unsigned long previousminutes = 0;
+unsigned long seconds = 0;
+unsigned long minutes = 0;
 /****************************************************************************************
  * Neopixel Clock Display
 *****************************************************************************************/
 
 #define NUMPIXELS 60
-#define RANGE 9999
+#define RANGE clockinterval
 
 //map led number to its segment in each digit
 int digit1[14] = { 5,  6,  3,  4, 14, 15, 12, 13, 10, 11,  7,  8,  1,  2};

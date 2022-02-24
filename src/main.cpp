@@ -3,13 +3,25 @@
  
 void setup()
 {
+  ClockTime = clockinterval;
+  seconds = ClockTime/ 1000;
+  minutes = seconds / 60;
+  seconds %= 60;
+  minutes %= 60;
+  
+  previousTime = ClockTime;
+  previousseconds = previousTime / 1000;
+  previousminutes = previousseconds / 60;
+  previousseconds %= 60;
+  previousminutes %= 60;
+
   //Serial setup
   Serial.begin(115200); 
   Serial.println();
 
   //Neopixel setup
   pixels.begin();
-  pixels.clear(); 
+  pixels.clear();
 
   pinMode(STARTSWITCH, INPUT);
   pinMode(ENCODERBUTTON, INPUT);
@@ -48,71 +60,110 @@ void setup()
 void loop()
 {
   currentTime = millis();
-  if(JudgeState == 0 && digitalRead(ENCODERBUTTON) == 1){
-    JudgeState = 1;
-  } else if(JudgeState == 1 && digitalRead(ENCODERBUTTON) == 0){
+  
+  //watch the reset button
+  if(ResetButtonState == DIAL_BUTTON_RELEASED && digitalRead(ENCODERBUTTON) == DIAL_BUTTON_PRESSED){
+    ResetButtonState = DIAL_BUTTON_PRESSED;
+  } else if(ResetButtonState == DIAL_BUTTON_PRESSED && digitalRead(ENCODERBUTTON) == DIAL_BUTTON_RELEASED){
     ClockTime = clockinterval;
-    JudgeState = 0;
+    ResetButtonState = DIAL_BUTTON_RELEASED;
   }
 
-  if(ClockState == 0 && digitalRead(STARTSWITCH) == 1){
-    ClockState = 1;
-  } else if(ClockState == 1 && digitalRead(STARTSWITCH) == 0){
-    ClockState = 0;
-  }
-
-  if(ClockState == 0 && ClockTime > 0){ //Counting Down...
-    if((StopTime - currentTime) < ClockTime){
-      ClockTime = StopTime - currentTime;
-    } else {
-      ClockTime = 0;
-    }
-    Serial.printf(" Clock Time %lu = %lu - %lu ", ClockTime, currentTime, StopTime);
-  } else if(ClockState == 1 || ClockTime == 0){//Suspend Count Down...
+  //watch the start/stop button
+  if(ClockState == CLOCK_STOPPED && digitalRead(STARTSWITCH) == START_SWITCH_ON){
+    ClockState = CLOCK_RUNNING;
+    myDFPlayer.play(START_FILE);
+    delay(3500);
+    currentTime = millis();
     StopTime = currentTime + ClockTime;
-    Serial.printf(" Stop Time %lu = %lu + %lu ", StopTime, currentTime, ClockTime);
-  } 
+  } else if(ClockState == CLOCK_RUNNING && digitalRead(STARTSWITCH) == START_SWTICH_OFF){
+    ClockState = CLOCK_STOPPED;
+  }
 
-  unsigned long previousseconds = previousTime / 1000;
-  unsigned long previousminutes = previousseconds / 60;
-  previousseconds %= 60;
-  previousminutes %= 60;
+  
 
-  unsigned long seconds = ClockTime / 1000;
-  unsigned long minutes = seconds / 60;
+  //if clock enabled, run count down
+  if(ClockState == CLOCK_RUNNING && ClockTime > 0){ //When clock is counting down...
+    if((StopTime - currentTime) > ClockTime){ //watch for overruns where the time on the clock would appear to increase
+      ClockTime = 0; //End the clock
+    } else {
+      ClockTime = StopTime - currentTime; //Update the time on the clock
+    }
+    
+  } else if(ClockState == CLOCK_STOPPED || ClockTime == 0){//When clock is stopped or at zero
+    StopTime = currentTime + ClockTime;//Suspend Count Down...
+  }
+
+  //calculate clock timing
+  seconds = ClockTime/ 1000;
+  minutes = seconds / 60;
   seconds %= 60;
   minutes %= 60;
 
-  CLKrgb(ClockTime, clockinterval);
+  //On final clock count, sound buzzer
+  if(minutes == 0){
+    if((previousseconds == 4 && seconds == 3) || 
+        (previousseconds == 3 && seconds == 2) || 
+        (previousseconds == 2 && seconds == 1) || 
+        (previousseconds == 1 && seconds == 0))
+      {
+        myDFPlayer.play(BUZZER_FILE);
+      }
+  }
+
+  Serial.printf(" Stop Time %lu Current Time %lu Clock Time %lu ", StopTime, currentTime, ClockTime);
+
+  //output clock timing to rgb clock display
+  CLKrgb(ClockTime/2, clockinterval);
   CLKdisplay(minutes*100 + seconds);
-  
+
+  //output clock timing to oled display
   OLEDdisplay.setCursor(0,0); // Start at top-left corner
   OLEDdisplay.println();
   OLEDdisplay.printf(" Time - %lu:%.2lu\n", minutes, seconds);
   OLEDdisplay.printf(" Clock : %d\n", ClockState);
-  OLEDdisplay.printf(" Judge : %d\n", JudgeState);
+  OLEDdisplay.printf(" Reset : %d\n", ResetButtonState);
   OLEDdisplay.display();
 
+  //output clock timing to serial port
   Serial.printf(" Time - %lu:%.2lu", minutes, seconds);
-  Serial.printf(" Clock : %d", ClockState);
-  Serial.printf(" Judge : %d\n", JudgeState);
-  
-  delay(delayval);
+  Serial.printf(" PTime - %lu:%.2lu", previousminutes, previousseconds);
+  //Serial.printf(" Clock : %d", ClockState);
+  //Serial.printf(" Reset : %d ", ResetButtonState);
 
-  if(!myDFPlayer.available() && minutes == 0){
-    if((previousseconds == 4 && seconds == 3) || 
-       (previousseconds == 3 && seconds == 2) || 
-       (previousseconds == 2 && seconds == 1) || 
-       (previousseconds == 1 && seconds == 0)){
-        myDFPlayer.play(1);  //Play the first mp3
-       }
-  }
-
+  //output mp3 player data to serial
   if (myDFPlayer.available()) {
     printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
+  } else {
+    Serial.println();
   }
 
+  //don't run too fast!
+  delay(delayval);
+  
+  //record time used in this loop for next time
   previousTime = ClockTime;
+  
+  //calculate previous clock timing
+  previousseconds = previousTime / 1000;
+  previousminutes = previousseconds / 60;
+  previousseconds %= 60;
+  previousminutes %= 60;
+}
+
+/****************************************************************************************
+ * RGB Display Functions
+*****************************************************************************************/
+void CLKrgb(int angle, int range){
+  angle = map(angle, 0, RANGE, 0, 360);
+  angle = constrain(angle, 0, 360);
+  if (angle<60)       {red = 255;                green = rainbow[angle];     blue = 0;} 
+  else if (angle<120) {red = rainbow[120-angle]; green = 255;                blue = 0;} 
+  else if (angle<180) {red = 0,                  green = 255;                blue = rainbow[angle-120];} 
+  else if (angle<240) {red = 0,                  green = rainbow[240-angle]; blue = 255;} 
+  else if (angle<300) {red = rainbow[angle-240], green = 0;                  blue = 255;} 
+  else                {red = 255,                green = 0;                  blue = rainbow[360-angle];} 
+
 }
 
 void CLKsetdigit(int digit, int number){
@@ -128,30 +179,19 @@ void CLKsetdigit(int digit, int number){
   }
 }
 
-void CLKrgb(int angle, int range){
-  angle = map(angle, 0, RANGE, 0, 360);
-  if (angle<60)       {red = 255;                green = rainbow[angle];     blue = 0;} 
-  else if (angle<120) {red = rainbow[120-angle]; green = 255;                blue = 0;} 
-  else if (angle<180) {red = 0,                  green = 255;                blue = rainbow[angle-120];} 
-  else if (angle<240) {red = 0,                  green = rainbow[240-angle]; blue = 255;} 
-  else if (angle<300) {red = rainbow[angle-240], green = 0;                  blue = 255;} 
-  else                {red = 255,                green = 0;                  blue = rainbow[360-angle];} 
-
-}
-
 void CLKdisplay(int value){
     int thos = value/1000;
     int huns = value/100 - 10*thos;
     int tens = value/10 - 10*huns - 100*thos;
     int ones = value - 10*tens - 100*huns - 1000*thos;
-    Serial.print(" thos: ");
-    Serial.print(thos);
-    Serial.print(" huns: ");
-    Serial.print(huns);
-    Serial.print(" tens: ");
-    Serial.print(tens);
-    Serial.print(" ones: ");
-    Serial.print(ones);
+    //Serial.print(" thos: ");
+    //Serial.print(thos);
+    //Serial.print(" huns: ");
+    //Serial.print(huns);
+    //Serial.print(" tens: ");
+    //Serial.print(tens);
+    //Serial.print(" ones: ");
+    //Serial.print(ones);
     CLKsetdigit(0,ones);
     
     if(tens || huns || thos){
@@ -173,6 +213,9 @@ void CLKdisplay(int value){
     }
 }
 
+/****************************************************************************************
+ * MP3 Player Functions
+*****************************************************************************************/
 void printDetail(uint8_t type, int value){
   switch (type) {
     case TimeOut:
