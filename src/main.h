@@ -41,16 +41,22 @@
 #define RXPIN D7
 #define JUDGESWITCH D8
 
-int delayval = 50;
+#define ENCODER_THRESHOLD 512
+long encoderValue = 0;
+long delayval = 100;
+int volume = 30;
+int encodercontrol = 1;
 
 #define clockinterval 180000 //3 minutes in milliseconds
 unsigned long currentTime = millis(); //current time on the internal clock
-unsigned long previousTime = millis();
+unsigned long previousClockTime = millis();
+unsigned long previousUpdateTime = millis();
 unsigned long StopTime = millis(); //time clock will stop
 unsigned long ClockTime = clockinterval; //time displayed on the clock
 
 int ClockState = DISABLED;
 int ResetButtonState = DISABLED;
+int EncoderState = DISABLED;
 
 unsigned long previousseconds = 0;
 unsigned long previousminutes = 0;

@@ -9,8 +9,8 @@ void setup()
   seconds %= 60;
   minutes %= 60;
   
-  previousTime = ClockTime;
-  previousseconds = previousTime / 1000;
+  previousClockTime = ClockTime;
+  previousseconds = previousClockTime / 1000;
   previousminutes = previousseconds / 60;
   previousseconds %= 60;
   previousminutes %= 60;
@@ -25,6 +25,8 @@ void setup()
 
   pinMode(STARTSWITCH, INPUT);
   pinMode(ENCODERBUTTON, INPUT);
+  pinMode(ENCODERDIRECTION, INPUT);
+  pinMode(ENCODERPULSE, INPUT);
 
   //OLED setup
   while(!OLEDdisplay.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -55,15 +57,20 @@ void setup()
   myDFPlayer.volume(30);  //Set volume value. From 0 to 30
   //myDFPlayer.play(1);  //Play the first mp3
 
+  CLKrgb(ClockTime/2, clockinterval);
+  CLKdisplay(minutes*100 + seconds);
+  //attachInterrupt(ENCODERDIRECTION, ISR, CHANGE);
 }
 
 void loop()
 {
   currentTime = millis();
-  
+
   //watch the reset button
   if(ResetButtonState == DIAL_BUTTON_RELEASED && digitalRead(ENCODERBUTTON) == DIAL_BUTTON_PRESSED){
     ResetButtonState = DIAL_BUTTON_PRESSED;
+    encodercontrol = !encodercontrol;
+    //detachInterrupt(ENCODERDIRECTION);
   } else if(ResetButtonState == DIAL_BUTTON_PRESSED && digitalRead(ENCODERBUTTON) == DIAL_BUTTON_RELEASED){
     ClockTime = clockinterval;
     ResetButtonState = DIAL_BUTTON_RELEASED;
@@ -72,6 +79,7 @@ void loop()
   //watch the start/stop button
   if(ClockState == CLOCK_STOPPED && digitalRead(STARTSWITCH) == START_SWITCH_ON){
     ClockState = CLOCK_RUNNING;
+    myDFPlayer.volume(volume);
     myDFPlayer.play(START_FILE);
     delay(3500);
     currentTime = millis();
@@ -80,10 +88,10 @@ void loop()
     ClockState = CLOCK_STOPPED;
   }
 
-  
-
   //if clock enabled, run count down
   if(ClockState == CLOCK_RUNNING && ClockTime > 0){ //When clock is counting down...
+    //output clock timing to rgb clock display
+
     if((StopTime - currentTime) > ClockTime){ //watch for overruns where the time on the clock would appear to increase
       ClockTime = 0; //End the clock
     } else {
@@ -107,49 +115,99 @@ void loop()
         (previousseconds == 2 && seconds == 1) || 
         (previousseconds == 1 && seconds == 0))
       {
+        myDFPlayer.volume(volume);
         myDFPlayer.play(BUZZER_FILE);
       }
   }
 
-  Serial.printf(" Stop Time %lu Current Time %lu Clock Time %lu ", StopTime, currentTime, ClockTime);
+  //Serial.printf(" Stop Time %lu Current Time %lu Clock Time %lu ", StopTime, currentTime, ClockTime);
 
-  //output clock timing to rgb clock display
-  CLKrgb(ClockTime/2, clockinterval);
-  CLKdisplay(minutes*100 + seconds);
+  if(currentTime - previousUpdateTime > delayval){
+    //output clock timing to oled display
+    OLEDdisplay.setCursor(0,0); // Start at top-left corner
+    OLEDdisplay.println();
+    if(encodercontrol){
+      OLEDdisplay.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+      OLEDdisplay.printf(" Time - %lu:%.2lu\n", minutes, seconds);
+      OLEDdisplay.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+      OLEDdisplay.printf(" Volume : %3ld\n", volume);
+      OLEDdisplay.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+    } else {
+      OLEDdisplay.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+      OLEDdisplay.printf(" Time - %lu:%.2lu\n", minutes, seconds);
+      OLEDdisplay.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+      OLEDdisplay.printf(" Volume : %3ld\n", volume);
+      OLEDdisplay.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+    }
+    
+    OLEDdisplay.printf(" Start : %d\n", ClockState);
+    OLEDdisplay.printf(" Reset : %d\n", ResetButtonState);
+    OLEDdisplay.display();
 
-  //output clock timing to oled display
-  OLEDdisplay.setCursor(0,0); // Start at top-left corner
-  OLEDdisplay.println();
-  OLEDdisplay.printf(" Time - %lu:%.2lu\n", minutes, seconds);
-  OLEDdisplay.printf(" Clock : %d\n", ClockState);
-  OLEDdisplay.printf(" Reset : %d\n", ResetButtonState);
-  OLEDdisplay.display();
+    previousUpdateTime = currentTime;
+    //Serial.printf("Updated display at:%ld", currentTime);
 
-  //output clock timing to serial port
-  Serial.printf(" Time - %lu:%.2lu", minutes, seconds);
-  Serial.printf(" PTime - %lu:%.2lu", previousminutes, previousseconds);
-  //Serial.printf(" Clock : %d", ClockState);
-  //Serial.printf(" Reset : %d ", ResetButtonState);
-
-  //output mp3 player data to serial
-  if (myDFPlayer.available()) {
-    printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
-  } else {
-    Serial.println();
+    //output clock timing to serial port
+    //Serial.printf(" Time - %lu:%.2lu", minutes, seconds);
+    //Serial.printf(" PTime - %lu:%.2lu", previousminutes, previousseconds);
+    //Serial.printf(" Clock : %d", ClockState);
+    //Serial.printf(" Reset : %d", ResetButtonState);
+    //Serial.printf(" encoder : %ld\n", encoderValue);
   }
 
+
+
+  //output mp3 player data to serial
+  //if (myDFPlayer.available()) {
+  //  printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
+  //} else {
+  //  Serial.println();
+  //}
+
   //don't run too fast!
-  delay(delayval);
-  
+  //delay(delayval);
+  if(ClockTime != previousClockTime){
+    CLKrgb(ClockTime/2, clockinterval);
+    CLKdisplay(minutes*100 + seconds);
+  }
   //record time used in this loop for next time
-  previousTime = ClockTime;
+  previousClockTime = ClockTime;
   
   //calculate previous clock timing
-  previousseconds = previousTime / 1000;
+  previousseconds = previousClockTime / 1000;
   previousminutes = previousseconds / 60;
   previousseconds %= 60;
   previousminutes %= 60;
+
+  int pulse = analogRead(ENCODERPULSE);
+  int direction = analogRead(ENCODERDIRECTION);
+
+  if(pulse >= ENCODER_THRESHOLD && EncoderState == DISABLED){
+    EncoderState = ENABLED;
+    Serial.printf("pulse: %d direction: %d\t\t", pulse, direction);
+    if(direction >= ENCODER_THRESHOLD) {
+      encoderValue++;
+      Serial.printf(" incriment: %ld\n", encoderValue);
+      if(ClockState == CLOCK_STOPPED && encodercontrol){  
+        ClockTime = ClockTime + 1000;
+      } else if(ClockState == CLOCK_STOPPED && !encodercontrol){
+        volume = constrain(volume++, 0, 30);
+      }
+    }
+    if(direction <= ENCODER_THRESHOLD) {
+      encoderValue--;
+      Serial.printf(" decriment: %ld\n", encoderValue);
+      if(ClockState == CLOCK_STOPPED && encodercontrol){  
+        ClockTime = ClockTime - 1000;
+      } else if(ClockState == CLOCK_STOPPED && !encodercontrol){
+        volume = constrain(volume--, 0, 30);
+      }
+    }
+  } else if(pulse <= ENCODER_THRESHOLD && EncoderState == ENABLED) {
+    EncoderState = DISABLED;
+  }
 }
+
 
 /****************************************************************************************
  * RGB Display Functions
